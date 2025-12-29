@@ -50,8 +50,9 @@ export class ChangelogService extends EventEmitter {
   }
 
   /**
-   * Detect the full path to the claude CLI
-   * Electron apps don't inherit shell PATH, so we need to find it explicitly
+   * Detect the full path to the claude CLI.
+   * With fix-path, process.env.PATH should include shell paths, but we still
+   * check common locations as a fallback for edge cases where PATH resolution fails.
    */
   private detectClaudePath(): void {
     const homeDir = os.homedir();

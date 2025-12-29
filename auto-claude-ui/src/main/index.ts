@@ -9,6 +9,44 @@ import { getUsageMonitor } from './claude-profile/usage-monitor';
 import { initializeUsageMonitorForwarding } from './ipc-handlers/terminal-handlers';
 import { initializeAppUpdater } from './app-updater';
 
+/**
+ * Fix PATH for Electron apps launched from Finder/dock.
+ * Electron apps don't inherit shell PATH when launched via GUI,
+ * so tools like claude, gh, python installed via version managers
+ * or Homebrew may not be found. fix-path reads the user's shell
+ * config to get the correct PATH.
+ */
+async function initializeShellPath(): Promise<void> {
+  // Only needed on macOS/Linux - Windows doesn't have this issue
+  if (process.platform === 'win32') {
+    return;
+  }
+
+  const originalPath = process.env.PATH;
+
+  try {
+    // fix-path is ESM-only, so we need dynamic import
+    const { default: fixPath } = await import('fix-path');
+    fixPath();
+
+    // Log success if PATH was augmented
+    if (process.env.PATH !== originalPath) {
+      console.warn('[main] Shell PATH initialized successfully');
+      console.warn('[main] PATH entries added from shell configuration');
+    } else {
+      console.warn('[main] Shell PATH already matches system PATH');
+    }
+  } catch (error) {
+    // Log warning but don't crash - the app can still work with limited PATH
+    console.warn('[main] Failed to initialize shell PATH:', error instanceof Error ? error.message : error);
+    console.warn('[main] Some CLI tools may not be found. Falling back to system PATH.');
+    // Ensure PATH wasn't partially modified
+    if (process.env.PATH !== originalPath) {
+      process.env.PATH = originalPath;
+    }
+  }
+}
+
 // Get icon path based on platform
 function getIconPath(): string {
   // In dev mode, __dirname is out/main, so we go up to project root then into resources
@@ -94,7 +132,11 @@ if (process.platform === 'darwin') {
 }
 
 // Initialize the application
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  // Initialize shell PATH before any child processes are spawned
+  // This is critical for finding CLI tools when launched from Finder/dock
+  await initializeShellPath();
+
   // Set app user model id for Windows
   electronApp.setAppUserModelId('com.autoclaude.ui');
 
